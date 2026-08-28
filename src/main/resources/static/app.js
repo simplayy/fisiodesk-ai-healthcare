@@ -129,7 +129,7 @@
         <h4>Note cliniche (${s.note.length})</h4>${note || '<div class="muted">nessuna</div>'}
         <h4>Calendario (${s.eventi.length})</h4><div class="eventi">${eventi || '<div class="muted">nessun evento</div>'}</div>
       </div>`;
-      storia.hidden = false;
+      storia.showModal();
     } catch (e) {
       alert(e.message);
     }
@@ -140,9 +140,8 @@
   $('esempi').addEventListener('click', (e) => { if (e.target.dataset.q) { domanda.value = e.target.dataset.q; esegui(); } });
   mostraPiano.addEventListener('click', () => { piano.hidden = !piano.hidden; mostraPiano.setAttribute('aria-expanded', String(!piano.hidden)); });
   risultati.addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) apriStoria(b.dataset.id); });
-  $('chiudi').addEventListener('click', () => { storia.hidden = true; });
-  storia.addEventListener('click', (e) => { if (e.target === storia) storia.hidden = true; });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') storia.hidden = true; });
+  $('chiudi').addEventListener('click', () => storia.close());
+  storia.addEventListener('click', (e) => { if (e.target === storia) storia.close(); });
 
   caricaProfessionisti();
   aggiornaStato();

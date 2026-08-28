@@ -1,6 +1,13 @@
 spring:
   application:
     name: fisiodesk-assistant
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Gli asset non hanno un hash nel nome: il browser deve chiedere se sono cambiati
+          # (risposta 304 quando non lo sono) invece di tenersi la copia vecchia.
+          no-cache: true
   threads:
     virtual:
       enabled: true
