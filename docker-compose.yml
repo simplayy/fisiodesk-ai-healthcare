@@ -1,59 +1,92 @@
-version: '3.8'
-
 services:
+
   mongodb:
     image: mongodb/mongodb-atlas-local:8.0
     container_name: fisiodesk-mongodb
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_DATABASE: fisiodesk
+      MONGODB_INITDB_DATABASE: fisiodesk
+      DO_NOT_TRACK: "1"
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
       - mongodb_mongot:/data/mongot
-    networks:
-      - fisiodesk-network
+      - ./data:/seed:ro
+      - ./scripts/mongo-init:/docker-entrypoint-initdb.d:ro
 
-  # Container che importa i dati automaticamente
-  mongodb-seed:
-    image: mongodb/mongodb-atlas-local:8.0
-    container_name: fisiodesk-mongodb-seed
+  ollama:
+    image: ollama/ollama:0.33.1
+    container_name: fisiodesk-ollama
     volumes:
-      - ./data:/data
-    command: >
-      bash -c "
-        sleep 5 &&
-        mongoimport --host mongodb --db fisiodesk --collection pazienti --file /data/pazienti.json --jsonArray &&
-        mongoimport --host mongodb --db fisiodesk --collection schede_valutazione --file /data/schede_valutazione.json --jsonArray &&
-        mongoimport --host mongodb --db fisiodesk --collection diario_trattamenti --file /data/diario_trattamenti.json --jsonArray &&
-        mongoimport --host mongodb --db fisiodesk --collection eventi_calendario --file /data/eventi_calendario.json --jsonArray &&
-        echo 'Dati importati con successo! ✅'
-      "
-    depends_on:
-      - mongodb
-    networks:
-      - fisiodesk-network
+      - ollama_models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_CONTEXT_LENGTH: "2048"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
-  # Optional: MongoDB Express per visualizzare i dati (UI su http://localhost:8081)
+  # Scarica i modelli una volta (restano nel volume). L'app non lo aspetta: parte a regole e passa
+  # al modello appena disponibile.
+  ollama-pull:
+    image: ollama/ollama:0.33.1
+    container_name: fisiodesk-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "for m in ${OLLAMA_MODELS:-qwen3.5:4b qwen3-embedding:0.6b}; do ollama pull $$m; done"]
+    restart: "no"
+
+  app:
+    build: .
+    image: fisiodesk-assistant
+    container_name: fisiodesk-assistant
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/fisiodesk?directConnection=true
+      OLLAMA_URL: http://ollama:11434
+      AI_CHAT_PROVIDER: ${AI_CHAT_PROVIDER:-ollama}
+      AI_EMBEDDING_PROVIDER: ${AI_EMBEDDING_PROVIDER:-ollama}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3.5:4b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      REFERENCE_DATE: ${REFERENCE_DATE:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Facoltativo: UI per guardare le collection. `docker compose --profile tools up`
   mongo-express:
     image: mongo-express:latest
     container_name: fisiodesk-mongo-express
+    profiles: ["tools"]
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
-      ME_CONFIG_BASICAUTH: false
+      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/?directConnection=true
+      ME_CONFIG_BASICAUTH: "false"
     depends_on:
-      - mongodb
-    networks:
-      - fisiodesk-network
+      mongodb:
+        condition: service_healthy
 
 volumes:
   mongodb_data:
   mongodb_config:
   mongodb_mongot:
-
-networks:
-  fisiodesk-network:
-    driver: bridge
+  ollama_models:

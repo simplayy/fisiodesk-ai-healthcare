@@ -1,1 +1,8 @@
 .DS_Store
+.env
+build/
+.gradle/
+.idea/
+*.iml
+.vscode/
+out/
