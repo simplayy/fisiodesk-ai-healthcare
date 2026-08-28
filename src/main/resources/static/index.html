@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FisioDesk · Ricerca assistita</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M9 22V10h10M9 16h8' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-row">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">F</span>
+        <span>FisioDesk</span>
+        <span class="sep">/</span>
+        <span class="muted">Ricerca assistita</span>
+      </div>
+      <div id="stato" class="stato" title="Stato dell'analisi delle note cliniche">…</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card ricerca">
+      <label for="domanda" class="lbl">Chiedi in linguaggio naturale</label>
+      <textarea id="domanda" rows="2" spellcheck="false">Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento</textarea>
+      <div class="riga">
+        <label class="campo">
+          <span>Professionista</span>
+          <select id="professionista"><option value="">Tutti</option></select>
+        </label>
+        <label class="campo">
+          <span>Data di riferimento</span>
+          <input type="date" id="riferimento">
+        </label>
+        <button id="cerca" class="btn" type="button">Cerca</button>
+      </div>
+      <div class="esempi" id="esempi">
+        <span class="muted">Prova:</span>
+        <button type="button" data-q="pazienti con cervicalgia migliorati negli ultimi 3 mesi">cervicalgia in miglioramento</button>
+        <button type="button" data-q="chi ha il mal di schiena peggiorato nell'ultimo mese?">mal di schiena peggiorato</button>
+        <button type="button" data-q="chi ha saltato l'ultimo appuntamento?">ultimo appuntamento saltato</button>
+        <button type="button" data-q="pazienti con la spalla congelata">spalla congelata</button>
+      </div>
+    </section>
+
+    <section id="esito" class="esito" hidden>
+      <div class="sommario">
+        <h2 id="titolo"></h2>
+        <button type="button" class="link" id="mostra-piano" aria-expanded="false">Come ho letto la domanda</button>
+      </div>
+      <div id="avvisi"></div>
+      <div id="piano" class="card piano" hidden></div>
+      <div id="risultati" class="lista"></div>
+    </section>
+  </main>
+
+  <div id="storia" class="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="storia-titolo">
+      <div class="modal-head">
+        <h3 id="storia-titolo"></h3>
+        <button type="button" class="chiudi" id="chiudi" aria-label="Chiudi">×</button>
+      </div>
+      <div id="storia-corpo"></div>
+    </div>
+  </div>
+
+  <footer class="wrap piede muted">
+    Annotazioni calcolate a scrittura, query su MongoDB senza chiamate al modello · <a href="/actuator/health">health</a> · <a href="/actuator/prometheus">metriche</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
