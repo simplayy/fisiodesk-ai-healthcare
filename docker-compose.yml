@@ -3,6 +3,9 @@ services:
   mongodb:
     image: mongodb/mongodb-atlas-local:8.0
     container_name: fisiodesk-mongodb
+    # L'immagine usa l'hostname come nome del replica set e lo salva nel volume:
+    # senza hostname fisso, ricreare il container rende il replica set invalido.
+    hostname: fisiodesk-mongodb
     ports:
       - "27017:27017"
     environment:
@@ -14,6 +17,7 @@ services:
       - mongodb_mongot:/data/mongot
       - ./data:/seed:ro
       - ./scripts/mongo-init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
 
   ollama:
     image: ollama/ollama:0.33.1
@@ -28,6 +32,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    restart: unless-stopped
 
   # Scarica i modelli una volta (restano nel volume). L'app non lo aspetta: parte a regole e passa
   # al modello appena disponibile.

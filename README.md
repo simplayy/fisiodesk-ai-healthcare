@@ -68,7 +68,8 @@ Francesca Ricci (spalla, dati di giugno) restano fuori, come da `USE_CASES_AND_T
 | Guardare le collection | `docker compose --profile tools up -d` → http://localhost:8081 |
 | Rifare le annotazioni da zero | `curl -X POST 'localhost:8080/api/annotazioni/riprocessa?daCapo=true'` |
 
-Tutte le variabili sono in [.env.example](.env.example).
+Tutte le variabili sono in [.env.example](.env.example). Dati, annotazioni e modelli vivono in
+volumi Docker: `docker compose down` li conserva, `docker compose down -v` riparte da zero.
 
 ## Come funziona, in breve
 
