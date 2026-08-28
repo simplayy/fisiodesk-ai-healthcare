@@ -59,16 +59,18 @@ public class QueryService {
         if (!stato.completo()) {
             avvisi.add("Analisi delle note in corso: " + stato.daModello() + " su " + stato.note() + " note elaborate dal modello, le altre con regole. I risultati possono cambiare.");
         }
-        if ("regole".equals(planned.origine())) {
-            avvisi.add("Domanda interpretata con il parser a regole (modello non disponibile o oltre il tempo limite).");
-        }
+        // "regole" è il percorso normale: il vocabolario ha letto la domanda e il modello non serviva,
+        // quindi non c'è niente da segnalare. Si avvisa solo quando la risposta è incompleta.
+        String condizione = planned.piano().condizione();
         if ("semantica".equals(esito.modalita())) {
-            avvisi.add("Condizione fuori tassonomia: risultati ordinati per affinità semantica con \"" + planned.piano().condizione()
-                    + "\", non filtrati per regione. Verifica le evidenze.");
-        }
-        if (planned.piano().condizioneLibera() && !"semantica".equals(esito.modalita())) {
-            avvisi.add("Condizione \"" + planned.piano().condizione() + "\" fuori tassonomia e ricerca semantica non pronta entro il tempo di risposta: "
-                    + "il filtro sulla condizione è stato ignorato. Riprova fra qualche secondo per il risultato completo.");
+            avvisi.add("Condizione \"" + condizione + "\" fuori dal vocabolario clinico: risultati ordinati per affinità semantica, "
+                    + "non filtrati per regione. Verifica le evidenze.");
+        } else if (planned.piano().condizioneLibera()) {
+            avvisi.add("Condizione \"" + condizione + "\" fuori dal vocabolario clinico: modello e ricerca semantica non pronti entro "
+                    + "il tempo di risposta, il filtro sulla condizione non è stato applicato. Riprova fra qualche secondo.");
+        } else if ("ripiego".equals(planned.origine())) {
+            avvisi.add("Domanda fuori dal vocabolario clinico e modello non disponibile entro il tempo di risposta: "
+                    + "sono stati applicati solo i filtri che le regole hanno saputo estrarre. Riprova fra qualche secondo.");
         }
         return avvisi;
     }

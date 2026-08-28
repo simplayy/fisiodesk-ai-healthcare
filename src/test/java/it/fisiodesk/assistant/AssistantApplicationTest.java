@@ -74,6 +74,8 @@ class AssistantApplicationTest {
         assertThat(ids(r)).doesNotContain(ANNA, GIUSEPPE, FRANCESCA);
         assertThat(r.piano().origine()).isEqualTo("regole");
         assertThat(r.modalita()).isEqualTo("strutturata");
+        // il vocabolario ha letto la domanda: è il percorso normale, non c'è niente da segnalare
+        assertThat(r.avvisi()).isEmpty();
         assertThat(r.periodo().a()).hasToString("2024-12-31");
         assertThat(r.periodo().da()).hasToString("2024-09-30");
         for (SearchResult.Paziente p : r.risultati()) {
