@@ -9,7 +9,12 @@
     stato: { no_show: 'non presentato', completato: 'completato', prenotato: 'prenotato', cancellato: 'cancellato' },
     andamento: { miglioramento: 'miglioramento', peggioramento: 'peggioramento', stazionario: 'stazionario', non_determinabile: 'n.d.' },
     collezione: { schede_valutazione: 'scheda', diario_trattamenti: 'seduta' },
-    origine: { cache: 'piano già in cache', modello: 'piano generato dal modello', regole: 'piano generato dal parser a regole' },
+    origine: {
+      regole: 'domanda interpretata dal vocabolario clinico, senza modello',
+      modello: 'domanda interpretata dal modello',
+      cache: 'domanda già interpretata dal modello in precedenza',
+      ripiego: 'domanda fuori vocabolario: filtri parziali estratti dalle regole, il modello sta elaborando',
+    },
   };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

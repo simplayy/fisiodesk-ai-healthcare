@@ -40,8 +40,8 @@ scripts/demo.sh            # oppure: scripts/demo.sh http://51.178.51.24:8080
 
 ```
 Domanda:  Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento
-Piano:    {"condizione":"dolore lombare","regione":"lombare","andamento":"miglioramento","finestra_mesi":3,"appuntamento":"ultimo_saltato","origine":"cache"}
-Periodo:  2024-09-30 -> 2024-12-31   modalità: strutturata   tempi: {"piano_ms":0,"ricerca_ms":9,"totale_ms":10}
+Piano:    {"condizione":"dolore lombare","regione":"lombare","andamento":"miglioramento","finestra_mesi":3,"appuntamento":"ultimo_saltato","origine":"regole"}
+Periodo:  2024-09-30 -> 2024-12-31   modalità: strutturata   tempi: {"piano_ms":0,"ricerca_ms":5,"totale_ms":5}
 
 Colombo Marco, 55 anni  -  ultimo appuntamento 2024-12-31 no_show
     2024-12-18  diario  miglioramento  Paziente guarito dalla lombalgia con test funzionali normali.
@@ -61,6 +61,7 @@ Francesca Ricci (spalla, dati di giugno) restano fuori, come da `USE_CASES_AND_T
 
 | Cosa | Come |
 |---|---|
+| Usare Gemini (chat) | `.env`: `AI_CHAT_PROVIDER=google-genai GOOGLE_API_KEY=...` |
 | Usare OpenAI | `.env`: `AI_CHAT_PROVIDER=openai AI_EMBEDDING_PROVIDER=openai OPENAI_API_KEY=... OLLAMA_MODELS=""` |
 | Usare Anthropic (chat) + Ollama (embedding) | `.env`: `AI_CHAT_PROVIDER=anthropic ANTHROPIC_API_KEY=...` |
 | Nessun modello, solo regole | `.env`: `AI_CHAT_PROVIDER=none AI_EMBEDDING_PROVIDER=none OLLAMA_MODELS=""` |
@@ -77,7 +78,7 @@ volumi Docker: `docker compose down` li conserva, `docker compose down -v` ripar
 flowchart LR
     N[(note cliniche)] -->|change stream| E[Arricchimento<br/>regole subito, modello dopo]
     E --> A[(annotazioni_cliniche<br/>regione, andamento, VAS, embedding)]
-    Q[domanda] --> P[Piano<br/>cache → modello → regole]
+    Q[domanda] --> P[Piano<br/>vocabolario, modello solo se serve]
     P --> M[Aggregation MongoDB]
     A --> M
     C[(eventi_calendario, pazienti)] --> M
@@ -93,11 +94,17 @@ rimandate al modello (hash del testo + versione del prompt). Prima passa un estr
 così il sistema è usabile mentre il modello lavora o se il modello non c'è.
 
 **A lettura.** La domanda diventa un piano di cinque campi (condizione, regione, andamento,
-finestra, appuntamento) - dalla cache, dal modello entro 1,5 s, o dal parser a regole - e il piano
-diventa una aggregation: filtro sulle annotazioni, gruppo per paziente, `$lookup` dell'ultimo
-appuntamento e dell'anagrafica. Nessuna chiamata al modello nel percorso della richiesta. Per
-condizioni fuori tassonomia ("tendinite") si passa a `$vectorSearch` sull'embedding delle note:
-una lista ordinata per affinità, dichiarata come tale nella risposta, non un filtro clinico.
+finestra, appuntamento) e il piano diventa una aggregation: filtro sulle annotazioni, gruppo per
+paziente, `$lookup` dell'ultimo appuntamento e dell'anagrafica.
+
+Il modello **non** è sul percorso della richiesta finché il vocabolario clinico basta a
+interpretare la domanda, ed è il caso della query target: 10 ms, zero chiamate. Viene interpellato
+solo per ciò che il vocabolario non copre — una condizione fuori tassonomia, una negazione che
+ribalta il senso ("che *non* hanno avuto miglioramenti"), una formulazione inattesa — e in quel
+caso il sistema **misura quanto ci mette**: se il provider è più lento del tempo di risposta
+concesso, smette di aspettarlo, risponde con i filtri parziali dicendolo, e lo lascia finire in
+background. Per condizioni fuori tassonomia si usa `$vectorSearch` sull'embedding delle note: una
+lista ordinata per affinità, dichiarata come tale, non un filtro clinico.
 
 Dettagli, definizioni ("ultimo appuntamento", "ultimi 3 mesi") e comportamento in degrado:
 [docs/architettura.md](docs/architettura.md).
@@ -119,24 +126,33 @@ Dettagli, definizioni ("ultimo appuntamento", "ultimi 3 mesi") e comportamento i
   al prezzo di 20-30 s a nota su CPU. Il provider è una riga di configurazione: in produzione un
   modello cloud economico (o una GPU) porta l'arricchimento a meno di un secondo a nota senza
   toccare il codice.
-- **Regole come rete di sicurezza e come verità dei test.** Il parser a regole non è "il mock":
-  è ciò che risponde quando il modello è assente, lento o non conforme, ed è deterministico, quindi
-  i test end-to-end girano senza modelli e senza chiavi.
+- **Il modello si chiama quando aggiunge qualcosa, non per abitudine.** Ricondurre "dolore
+  lombare, migliorati, ultimi 3 mesi, ultimo appuntamento saltato" a cinque campi è un compito
+  chiuso: il vocabolario clinico lo fa in microsecondi e senza sbagliare (misurato: il modello 4B
+  locale impiega 14-16 s per lo stesso risultato). Il modello serve dove il vocabolario finisce —
+  condizioni fuori tassonomia, negazioni, formulazioni inattese — ed è lì che viene chiamato. Il
+  lavoro linguistico vero, cioè leggere 32 note cliniche in italiano libero, resta tutto suo.
+- **Il tempo di attesa si misura, non si assume.** Planner ed embedding registrano la latenza del
+  proprio modello: se il provider è più lento del budget di risposta, le richieste successive non
+  lo aspettano più e ricevono subito i filtri parziali, con l'avviso. Stesso codice, stesso
+  provider veloce: lo aspetta e lo usa. È ciò che tiene il caso peggiore a 1,86 s invece di 6,2 s.
 
 ## Vincoli
 
-**Performance.** Piano in cache e aggregation su indici: la query target risponde in 10 ms sul
-server della demo (VPS 8 vCPU, tutto lo stack sulla stessa macchina). Con k6, 50 utenti virtuali
-per 30 secondi che alternano tre domande e quattro professionisti (`scripts/load-test.js`):
+**Performance.** Nessun modello sul percorso della richiesta e aggregation su indici: la query
+target risponde in **10 ms** a cache vuota, appena riavviato il servizio (VPS 8 vCPU, tutto lo
+stack sulla stessa macchina). Con k6, 50 utenti virtuali per 30 secondi che alternano tre domande
+e quattro professionisti (`scripts/load-test.js`):
 
 ```
-http_reqs..........: 14445   480/s
-http_req_duration..: avg=104ms  med=90ms  p(90)=158ms  p(95)=193ms  max=1.75s
+http_reqs..........: 13303   443/s
+http_req_duration..: avg=113ms  med=99ms  p(90)=174ms  p(95)=216ms  max=1.86s
 http_req_failed....: 0.00%
 ```
 
-Il massimo di 1,75 s è la prima richiesta di una domanda non ancora in cache: il modello locale
-non risponde entro 1,5 s e la richiesta prosegue con il parser a regole.
+Il caso peggiore, 1,86 s, è la **prima** domanda fuori vocabolario: il sistema aspetta il modello
+locale, scopre che impiega 16 s e da quel momento non lo aspetta più. Le successive tornano a
+12 ms. Con un provider ospitato non c'è nulla da imparare: risponde entro il budget e viene usato.
 
 **Costi.** Una chiamata al modello per nota scritta, una per domanda distinta (poi cache), zero
 per ricerca. Per 1.300 professionisti che scrivono 20 note al giorno sono 26.000 chiamate/giorno
@@ -184,7 +200,7 @@ docs/                        architettura, screenshot
 data/                        dataset fornito
 ```
 
-Stack: Java 25, Spring Boot 4.1, Spring AI 2.0 (Ollama / OpenAI / Anthropic), Spring Data MongoDB,
+Stack: Java 25, Spring Boot 4.1, Spring AI 2.0 (Ollama / Gemini / OpenAI / Anthropic), Spring Data MongoDB,
 MongoDB Atlas Local 8.0, Ollama, Gradle. Java e Spring perché è lo stack di FisioDesk: il servizio
 può essere incorporato nel monolite esistente così com'è. Spring AI evita di scrivere a mano i
 client dei provider, gli structured output e lo switch fra modelli.

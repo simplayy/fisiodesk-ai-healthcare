@@ -29,9 +29,8 @@ flowchart LR
     subgraph lettura [Fase 2 - query, sincrona, senza chiamate al modello]
         UI[UI web / Angular] --> API[POST /api/ricerca]
         API --> PL{Piano}
-        PL -->|cache| AG
-        PL -->|modello entro timeout| AG
-        PL -->|regole| AG[Aggregation MongoDB]
+        PL -->|vocabolario: microsecondi| AG
+        PL -->|fuori vocabolario: modello| AG[Aggregation MongoDB]
         AG --> RIS[Pazienti + evidenze + ultimo appuntamento]
     end
 
@@ -93,10 +92,43 @@ modelli piccoli ogni tanto "completano" un valore assente.
   "finestra_mesi": 3, "appuntamento": "ultimo_saltato" }
 ```
 
-Tre livelli, in ordine: **cache** (stessa domanda -> stesso piano, zero costo), **modello** entro un
-timeout (1,5 s), altrimenti **parser a regole**. Se il modello sfora il timeout la risposta parte
-comunque; il suo piano, quando arriva, finisce in cache per la volta dopo. All'avvio la domanda
-target viene pre-pianificata.
+**Il modello viene interpellato solo quando serve.** Il vocabolario clinico prova per primo: se
+riconduce la domanda a filtri concreti — è il caso della query target e di tutta la sua famiglia —
+il piano è pronto in microsecondi e nessun modello viene chiamato. Il modello entra in gioco per le
+domande che il vocabolario non copre: una condizione fuori tassonomia ("fibromialgia"), una
+negazione che ribalta il senso ("che **non** hanno avuto miglioramenti"), una formulazione
+inattesa. Il suo piano, quando arriva, resta in cache.
+
+Misure sul server della demo, modello locale su CPU:
+
+| percorso | quando | tempo |
+|---|---|---|
+| vocabolario | query target e famiglia | 7-12 ms |
+| modello (locale, 4B su CPU) | domanda fuori vocabolario | 14-16 s |
+| modello (ospitato) | domanda fuori vocabolario | frazioni di secondo |
+
+Da qui la scelta di non mettere il modello sul percorso della richiesta a meno che non sia lui
+l'unico a poter rispondere.
+
+### Il budget di risposta
+
+`assistant.budget` (2 s) è il tempo massimo dell'intera risposta, non di un singolo passo. Chi
+aspetta un modello riceve la quota che resta, meno una riserva per l'aggregation.
+
+Ma il punto è un altro: **quanto aspettare non è una costante, si misura.** Sia il planner sia
+l'embedding registrano la latenza osservata del proprio modello; se le risposte precedenti sono
+arrivate oltre il tempo disponibile, le richieste successive non lo aspettano affatto — rispondono
+subito con quello che le regole hanno estratto, dicendolo negli `avvisi`, e lasciano il modello
+lavorare in background per popolare la cache. È la differenza fra 1,8 s e 12 ms per le stesse
+domande, senza toccare una riga di configurazione:
+
+```
+Il modello impiega 15977 ms per interpretare una domanda, oltre il limite di PT1.5S:
+d'ora in poi le domande fuori vocabolario ricevono subito il piano a regole e il modello
+lavora in background
+```
+
+Con un provider veloce la stessa logica lo aspetta e lo usa, perché ce la fa.
 
 Il piano diventa una sola aggregation su `annotazioni_cliniche`:
 
@@ -156,7 +188,7 @@ condizione fuori tassonomia diventa frequente, la si aggiunge alla tassonomia (u
 | Situazione | Effetto |
 |---|---|
 | Modello non ancora scaricato / servizio giù | Annotazioni a regole, piano a regole, avviso nella risposta. La riconciliazione riprova ogni minuto. |
-| Modello lento | Piano a regole entro il timeout; il piano del modello va in cache. |
+| Modello lento | Misurato una volta, poi non lo si aspetta più: risposta immediata con i filtri delle regole e avviso; il piano del modello va in cache per le volte successive. |
 | Risposta non conforme allo schema | Scartata, la nota resta a regole e verrà ritentata. |
 | Ricerca vettoriale non supportata dal server | Modalità semantica disattivata; la query strutturata non ne ha bisogno. |
 | Cambio di prompt o di modello | `versione` diversa -> rielaborazione progressiva. |

@@ -3,6 +3,11 @@ package it.fisiodesk.assistant.query;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.List;
 import java.util.Optional;
 
@@ -49,6 +54,9 @@ public class RetrievalService {
     private final AssistantProperties.Retrieval cfg;
     /** L'embedding della condizione costa secondi su CPU: la stessa condizione non si ricalcola. */
     private final Cache<String, List<Double>> vettori = Caffeine.newBuilder().maximumSize(500).expireAfterWrite(Duration.ofHours(6)).build();
+    private final Executor esecutore = r -> Thread.ofVirtual().name("embedding").start(r);
+    /** Ultima latenza osservata del modello di embedding; 0 finché non se ne conosce una. */
+    private volatile long ultimaLatenzaMs;
 
     public RetrievalService(MongoTemplate mongo, AiModels modelli, VectorIndexManager indice, AssistantProperties props) {
         this.mongo = mongo;
@@ -57,20 +65,21 @@ public class RetrievalService {
         this.cfg = props.retrieval();
     }
 
-    public Esito cerca(QueryPlan piano, @Nullable ObjectId professionista, Periodo periodo) {
+    public Esito cerca(QueryPlan piano, @Nullable ObjectId professionista, Periodo periodo, Duration entro) {
         Document filtro = new Document("data", new Document("$gte", Date.from(periodo.inizio())).append("$lte", Date.from(periodo.fine())));
         if (professionista != null) {
             filtro.append("professionista_id", professionista);
         }
         List<Document> pipeline = new ArrayList<>();
-        boolean semantica = piano.condizioneLibera() && embedding != null && indice.pronto();
+        List<Double> vettore = piano.condizioneLibera() && embedding != null && indice.pronto() ? vettore(piano.condizione(), entro) : null;
+        boolean semantica = vettore != null;
         if (semantica) {
             if (piano.andamento() != AndamentoRichiesto.qualsiasi) {
                 filtro.append("andamenti", piano.andamento().name());
             }
             pipeline.add(new Document("$vectorSearch", new Document("index", VectorIndexManager.INDEX)
                     .append("path", "embedding")
-                    .append("queryVector", vettore(piano.condizione()))
+                    .append("queryVector", vettore)
                     .append("numCandidates", cfg.vectorLimit() * 4)
                     .append("limit", cfg.vectorLimit())
                     .append("filter", filtro)));
@@ -118,15 +127,43 @@ public class RetrievalService {
         return new Esito(out, semantica ? "semantica" : "strutturata");
     }
 
-    private List<Double> vettore(String testo) {
-        return vettori.get(testo.toLowerCase(), t -> {
-            float[] v = embedding.embed(t);
-            List<Double> out = new ArrayList<>(v.length);
-            for (float f : v) {
-                out.add((double) f);
-            }
-            return out;
-        });
+    /**
+     * Embedding della condizione, ma non a costo di sforare il tempo di risposta: calcolarlo su CPU
+     * costa secondi. Se non arriva in tempo si risponde senza il filtro di condizione (dicendolo) e
+     * il calcolo prosegue, così la stessa domanda la volta dopo è immediata.
+     */
+    private @Nullable List<Double> vettore(String testo, Duration entro) {
+        String chiave = testo.toLowerCase();
+        List<Double> pronto = vettori.getIfPresent(chiave);
+        if (pronto != null) {
+            return pronto;
+        }
+        CompletableFuture<List<Double>> futuro = CompletableFuture.supplyAsync(() -> vettori.get(chiave, this::calcola), esecutore);
+        long attesa = entro.toMillis();
+        if (attesa <= 0 || (ultimaLatenzaMs > 0 && ultimaLatenzaMs > attesa)) {
+            // Il modello di embedding è già risultato più lento del tempo disponibile: si risponde
+            // senza filtro di condizione e il calcolo prosegue, così la stessa domanda poi è immediata.
+            return null;
+        }
+        try {
+            return futuro.get(attesa, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.debug("Embedding di '{}' oltre {}, rispondo senza filtro di condizione", testo, entro);
+        } catch (ExecutionException | InterruptedException e) {
+            log.warn("Embedding fallito: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private List<Double> calcola(String testo) {
+        long inizio = System.nanoTime();
+        float[] v = embedding.embed(testo);
+        ultimaLatenzaMs = (System.nanoTime() - inizio) / 1_000_000;
+        List<Double> out = new ArrayList<>(v.length);
+        for (float f : v) {
+            out.add((double) f);
+        }
+        return out;
     }
 
     private static SearchResult.Paziente mappa(Document d, QueryPlan piano) {

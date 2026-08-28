@@ -1,5 +1,6 @@
 package it.fisiodesk.assistant.query;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,24 +11,31 @@ import org.springframework.stereotype.Service;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import it.fisiodesk.assistant.config.AssistantProperties;
 import it.fisiodesk.assistant.enrichment.EnrichmentService;
 import it.fisiodesk.assistant.enrichment.EnrichmentStatus;
 
 @Service
 public class QueryService {
 
+    /** Quota del budget lasciata all'aggregation e alla serializzazione della risposta. */
+    private static final Duration RISERVA_QUERY = Duration.ofMillis(250);
+
     private final PlanService planner;
     private final RetrievalService retrieval;
     private final ReferenceDates date;
     private final EnrichmentService enrichment;
+    private final AssistantProperties props;
     private final Timer tempoPiano;
     private final Timer tempoRicerca;
 
-    public QueryService(PlanService planner, RetrievalService retrieval, ReferenceDates date, EnrichmentService enrichment, MeterRegistry metrics) {
+    public QueryService(PlanService planner, RetrievalService retrieval, ReferenceDates date, EnrichmentService enrichment,
+            AssistantProperties props, MeterRegistry metrics) {
         this.planner = planner;
         this.retrieval = retrieval;
         this.date = date;
         this.enrichment = enrichment;
+        this.props = props;
         this.tempoPiano = Timer.builder("assistant.query.plan").register(metrics);
         this.tempoRicerca = Timer.builder("assistant.query.retrieval").register(metrics);
     }
@@ -38,7 +46,8 @@ public class QueryService {
         long t1 = System.nanoTime();
         LocalDate riferimento = date.riferimento(dataRiferimento);
         ReferenceDates.Periodo periodo = date.periodo(riferimento, planned.piano().finestraMesi());
-        RetrievalService.Esito esito = tempoRicerca.record(() -> retrieval.cerca(planned.piano(), professionista, periodo));
+        Duration restanti = props.restanti(Duration.ofNanos(t1 - t0)).minus(RISERVA_QUERY);
+        RetrievalService.Esito esito = tempoRicerca.record(() -> retrieval.cerca(planned.piano(), professionista, periodo, restanti));
         long t2 = System.nanoTime();
         return new SearchResult(domanda, SearchResult.Piano.di(planned.piano(), planned.origine()), new SearchResult.Periodo(periodo.da(), periodo.a()),
                 esito.modalita(), esito.pazienti(), new SearchResult.Tempi(ms(t1 - t0), ms(t2 - t1), ms(t2 - t0)), avvisi(planned, esito));
@@ -58,7 +67,8 @@ public class QueryService {
                     + "\", non filtrati per regione. Verifica le evidenze.");
         }
         if (planned.piano().condizioneLibera() && !"semantica".equals(esito.modalita())) {
-            avvisi.add("Condizione fuori tassonomia e ricerca semantica non disponibile: filtro sulla condizione ignorato.");
+            avvisi.add("Condizione \"" + planned.piano().condizione() + "\" fuori tassonomia e ricerca semantica non pronta entro il tempo di risposta: "
+                    + "il filtro sulla condizione è stato ignorato. Riprova fra qualche secondo per il risultato completo.");
         }
         return avvisi;
     }

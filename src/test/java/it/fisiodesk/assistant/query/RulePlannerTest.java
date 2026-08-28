@@ -46,17 +46,29 @@ class RulePlannerTest {
     void domandaSenzaCondizione() {
         QueryPlan p = planner.pianifica("chi non si è presentato all'ultimo appuntamento?").orElseThrow();
         assertThat(p).isEqualTo(new QueryPlan("", Regione.altro, AndamentoRichiesto.qualsiasi, 0, Appuntamento.ultimo_saltato));
-        assertThat(p.condizioneLibera()).isFalse();
+    }
+
+    /** Il modello viene interpellato solo qui: sono le domande che il vocabolario non sa ricondurre a filtri. */
+    @Test
+    void condizioneFuoriTassonomiaVaAlModello() {
+        assertThat(planner.pianifica("pazienti con tendinite in miglioramento")).isEmpty();
+        assertThat(planner.pianifica("pazienti con fibromialgia")).isEmpty();
+        // "cervicobrachialgia" non è nel dizionario parola per parola, ma contiene "cervic": le regole bastano
+        assertThat(planner.pianifica("pazienti con cervicobrachialgia").orElseThrow().regione()).isEqualTo(Regione.cervicale);
+        assertThat(planner.ripiego("pazienti con tendinite in miglioramento").condizione()).isEqualTo("tendinite");
     }
 
     @Test
-    void condizioneFuoriTassonomiaRestaLibera() {
-        QueryPlan p = planner.pianifica("pazienti con tendinite in miglioramento").orElseThrow();
-        assertThat(p.regione()).isEqualTo(Regione.altro);
-        assertThat(p.condizione()).isEqualTo("tendinite");
-        assertThat(p.condizioneLibera()).isTrue();
+    void negazioneDellAndamentoVaAlModello() {
+        assertThat(planner.pianifica("pazienti che non hanno avuto miglioramenti alla schiena")).isEmpty();
+        assertThat(planner.pianifica("chi non è migliorato con la lombalgia?")).isEmpty();
+        // "non presentato" non è una negazione dell'andamento: è la formulazione normale dell'appuntamento saltato
+        assertThat(planner.pianifica("chi non si è presentato all'ultima seduta?")).isPresent();
+    }
 
-        assertThat(planner.pianifica("pazienti con vertigini?").orElseThrow().condizione()).isEqualTo("vertigini");
-        assertThat(planner.pianifica("pazienti con la spalla congelata").orElseThrow().condizione()).isEqualTo("spalla congelata");
+    @Test
+    void domandaIncomprensibileVaAlModello() {
+        assertThat(planner.pianifica("come vanno le cose?")).isEmpty();
+        assertThat(planner.pianifica("")).isEmpty();
     }
 }

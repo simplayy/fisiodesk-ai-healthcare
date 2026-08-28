@@ -17,7 +17,7 @@ spring:
     uri: ${MONGODB_URI:mongodb://localhost:27017/fisiodesk?directConnection=true}
   ai:
     model:
-      chat: ${AI_CHAT_PROVIDER:ollama}            # ollama | openai | anthropic | none
+      chat: ${AI_CHAT_PROVIDER:ollama}            # ollama | google-genai | openai | anthropic | none
       embedding: ${AI_EMBEDDING_PROVIDER:ollama}  # ollama | openai | none
     ollama:
       base-url: ${OLLAMA_URL:http://localhost:11434}
@@ -34,6 +34,13 @@ spring:
         temperature: 0
       embedding:
         model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    google:
+      genai:
+        api-key: ${GOOGLE_API_KEY:}
+        chat:
+          model: ${GOOGLE_CHAT_MODEL:gemini-2.5-flash-lite}
+          temperature: 0
+          thinking-budget: 0   # è un'estrazione, non un ragionamento: non si pagano token di reasoning
     anthropic:
       api-key: ${ANTHROPIC_API_KEY:}
       chat:
@@ -44,8 +51,6 @@ assistant:
   reference-date: ${REFERENCE_DATE:}
   planner:
     timeout: ${PLANNER_TIMEOUT:1500ms}
-    warmup:
-      - Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento
   enrichment:
     startup-delay: ${ENRICHMENT_STARTUP_DELAY:5s}
     reconcile-interval: ${ENRICHMENT_INTERVAL:60s}
