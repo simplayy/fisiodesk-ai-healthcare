@@ -1,6 +1,7 @@
 package it.fisiodesk.assistant.clinical;
 
 import java.text.Normalizer;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -84,6 +85,6 @@ public final class Vocabolario {
     }
 
     private static List<Pattern> patterns(String... regex) {
-        return java.util.Arrays.stream(regex).map(Pattern::compile).toList();
+        return Arrays.stream(regex).map(Pattern::compile).toList();
     }
 }

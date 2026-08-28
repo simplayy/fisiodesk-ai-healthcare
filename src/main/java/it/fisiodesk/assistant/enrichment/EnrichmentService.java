@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -177,7 +178,7 @@ public class EnrichmentService {
         try {
             float[] v = embedding.embed(testo);
             indice.ensure(v.length);
-            java.util.ArrayList<Double> out = new java.util.ArrayList<>(v.length);
+            List<Double> out = new ArrayList<>(v.length);
             for (float f : v) {
                 out.add((double) f);
             }

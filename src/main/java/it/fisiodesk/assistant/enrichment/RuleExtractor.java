@@ -1,5 +1,6 @@
 package it.fisiodesk.assistant.enrichment;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -47,7 +48,7 @@ public class RuleExtractor implements Extractor {
 
     static List<Integer> vas(String testo) {
         Matcher m = VAS.matcher(testo);
-        java.util.ArrayList<Integer> out = new java.util.ArrayList<>();
+        List<Integer> out = new ArrayList<>();
         while (m.find()) {
             int v = Integer.parseInt(m.group(1));
             if (v <= 10) {

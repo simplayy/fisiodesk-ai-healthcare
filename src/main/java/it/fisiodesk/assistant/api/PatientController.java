@@ -3,9 +3,11 @@ package it.fisiodesk.assistant.api;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -58,7 +60,7 @@ public class PatientController {
             throw new NotFoundException("Paziente " + id + " non trovato");
         }
         Map<String, Annotation> perNota = annotazioni.findByPazienteIdOrderByDataDesc(oid).stream()
-                .collect(java.util.stream.Collectors.toMap(Annotation::id, a -> a));
+                .collect(Collectors.toMap(Annotation::id, a -> a));
         List<Nota> note = this.note.delPaziente(oid).stream()
                 .sorted(Comparator.comparing(SourceNote::data).reversed())
                 .map(n -> {
@@ -71,7 +73,7 @@ public class PatientController {
                 .stream()
                 .map(e -> new Evento(e.getDate("data").toInstant(), e.getString("stato"), e.getInteger("durata"), e.getString("note")))
                 .toList();
-        Map<String, Object> anagrafica = new java.util.LinkedHashMap<>();
+        Map<String, Object> anagrafica = new LinkedHashMap<>();
         paziente.forEach((k, v) -> anagrafica.put(k, v instanceof ObjectId o ? o.toHexString() : v instanceof Date d ? d.toInstant() : v));
         anagrafica.put("id", oid.toHexString());
         anagrafica.remove("_id");

@@ -51,9 +51,8 @@ public class NoteChangeListener {
         container.start();
         for (String collezione : NoteRepository.COLLEZIONI) {
             MessageListener<ChangeStreamDocument<Document>, Document> listener = msg -> onChange(collezione, msg.getBody());
-            ChangeStreamRequest<Document> request = ChangeStreamRequest.<Document>builder()
+            ChangeStreamRequest<Document> request = ChangeStreamRequest.builder(listener)
                     .collection(collezione)
-                    .publishTo(listener)
                     .filter(Aggregation.newAggregation(Aggregation.match(Criteria.where("operationType").in(List.of("insert", "update", "replace")))))
                     .fullDocumentLookup(FullDocument.UPDATE_LOOKUP)
                     .build();
